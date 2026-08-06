@@ -51,11 +51,14 @@ services:
     build:
       context: src/frontend
       dockerfile: Dockerfile
+      # NEXT_PUBLIC_* variables are inlined into the client JS bundle at build time — setting
+      # them under `environment:` below has no effect, since that only reaches the container
+      # at runtime, after the bundle already exists. They must be passed as build args instead.
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5205}
     container_name: realtest-frontend
     restart: unless-stopped
     profiles: ["full"]
-    environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5205}
     ports:
       - "3000:3000"
     depends_on:
