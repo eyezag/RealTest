@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  DOTNET_VERSION: "10.0.x"
+  NODE_VERSION: "22.x"
+
+jobs:
+  backend:
+    name: Backend (build & test)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore src/backend/RealTest.sln
+
+      - name: Build
+        run: dotnet build src/backend/RealTest.sln --no-restore --configuration Release
+
+      - name: Run unit tests
+        run: dotnet test tests/RealTest.UnitTests/RealTest.UnitTests.csproj --no-build --configuration Release --logger "trx;LogFileName=unit-tests.trx"
+
+      - name: Run architecture tests
+        run: dotnet test tests/RealTest.ArchitectureTests/RealTest.ArchitectureTests.csproj --no-build --configuration Release --logger "trx;LogFileName=architecture-tests.trx"
+
+      - name: Run integration tests
+        # Testcontainers pulls and runs a disposable PostgreSQL container — Docker is
+        # preinstalled on GitHub-hosted Ubuntu runners, so no extra setup is required.
+        run: dotnet test tests/RealTest.IntegrationTests/RealTest.IntegrationTests.csproj --no-build --configuration Release --logger "trx;LogFileName=integration-tests.trx"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-results
+          path: "**/*.trx"
+          retention-days: 7
+
+  frontend:
+    name: Frontend (lint, type check, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: src/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:5205

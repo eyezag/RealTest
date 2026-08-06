@@ -1,0 +1,66 @@
+name: realtest
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: realtest-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-realtest}
+      POSTGRES_USER: ${POSTGRES_USER:-realtest}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-realtest_dev_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - realtest_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-realtest} -d ${POSTGRES_DB:-realtest}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # Optional: containerized backend/frontend for a full docker-compose stack.
+  # Not started by default — run `docker compose --profile full up --build` to include them.
+  # During day-to-day development it's simpler to run the backend/frontend natively
+  # (see README) so you get fast rebuilds and debugger attach.
+  backend:
+    build:
+      context: .
+      dockerfile: src/backend/RealTest.Api/Dockerfile
+    container_name: realtest-backend
+    restart: unless-stopped
+    profiles: ["full"]
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-realtest};Username=${POSTGRES_USER:-realtest};Password=${POSTGRES_PASSWORD:-realtest_dev_password}
+      Jwt__Issuer: ${Jwt__Issuer:-realtest-api-dev}
+      Jwt__Audience: ${Jwt__Audience:-realtest-client-dev}
+      Jwt__SigningKey: ${Jwt__SigningKey:-dev-only-signing-key-change-me-please-32chars-min}
+      Jwt__AccessTokenLifetimeMinutes: ${Jwt__AccessTokenLifetimeMinutes:-15}
+      Jwt__RefreshTokenLifetimeDays: ${Jwt__RefreshTokenLifetimeDays:-7}
+      Frontend__Url: ${Frontend__Url:-http://localhost:3000}
+    ports:
+      - "5205:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: src/frontend
+      dockerfile: Dockerfile
+    container_name: realtest-frontend
+    restart: unless-stopped
+    profiles: ["full"]
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5205}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  realtest_postgres_data:
+    name: realtest_postgres_data
